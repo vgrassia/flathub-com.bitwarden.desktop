@@ -4,7 +4,9 @@ runtime-version: '19.08'
 sdk: org.freedesktop.Sdk
 base: org.electronjs.Electron2.BaseApp
 base-version: '19.08'
-command: bitwarden
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.node10
+command: start-bitwarden
 separate-locales: false
 finish-args:
   - --share=ipc
@@ -15,33 +17,47 @@ finish-args:
   - --talk-name=org.freedesktop.Notifications
   - --talk-name=org.freedesktop.secrets
   - --filesystem=xdg-download
-rename-desktop-file: bitwarden.desktop
-rename-icon: bitwarden
 modules:
   - shared-modules/libsecret/libsecret.json
 
-  - name: Bitwarden
-    sources:
-      - type: file
-        only-arches:
-          - x86_64
-        url: https://github.com/bitwarden/desktop/releases/download/v1.17.2/Bitwarden-1.17.2-amd64.deb
-        sha256: fd47d445315ed2ee26d7bcb02857d7ee09961e038fdbe915b6d7373d24cff46c
-      - type: script
-        dest-filename: bitwarden.sh
-        commands:
-          - export TMPDIR="$XDG_RUNTIME_DIR/app/$FLATPAK_ID"
-          - exec zypak-wrapper /app/Bitwarden/bitwarden "$@"
-      - type: file
-        path: com.bitwarden.desktop.appdata.xml
+  - name: node
     buildsystem: simple
     build-commands:
-      - 'ar -x Bitwarden*.deb'
-      - 'rm -f Bitwarden*.deb'
-      - 'tar -xf data.tar.xz'
-      - 'rm -f control.tar.gz data.tar.xz debian-binary'
-      - 'cp -r opt/* usr/* $FLATPAK_DEST'
-      - 'rm -rf opt usr'
-      - 'install bitwarden.sh $FLATPAK_DEST/bin/bitwarden'
-      - 'install -D -m 644 -t $FLATPAK_DEST/share/metainfo $FLATPAK_ID.appdata.xml'
-      - 'desktop-file-edit --set-key=Exec --set-value="bitwarden %U" $FLATPAK_DEST/share/applications/bitwarden.desktop'
+      - /usr/lib/sdk/node10/install-sdk.sh
+
+  - name: bitwarden
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/node10/bin
+      env:
+        ELECTRON_BUILDER_CACHE: /run/build/bitwarden/flatpak-node/npm-cache
+        ELECTRON_CACHE: /run/build/bitwarden/flatpak-node/electron-cache
+        electron_config_cache: /run/build/bitwarden/flatpak-node/electron-cache
+        npm_config_cache: /run/build/bitwarden/flatpak-node/npm-cache
+        npm_config_nodedir: /usr/lib/sdk/node10
+    build-commands:
+      - npm install --offline
+      - npm run dist:dir --offline
+      - mv dist/*-unpacked /app/bitwarden
+      - install -D -m 755 start-bitwarden.sh $FLATPAK_DEST/bin/start-bitwarden
+      - install -D -m 644 -t $FLATPAK_DEST/share/metainfo $FLATPAK_ID.metainfo.xml
+    sources:
+      - type: git
+        url: https://github.com/bitwarden/desktop
+        commit: ecdd97a499442e6dab139811706656d056f4ca65
+      - type: patch
+        path: no-prebuild-renderer.patch
+      - type: file
+        path: webfonts.css
+        dest: src/css
+      - type: archive
+        path: webfonts.zip
+        dest: src/css/webfonts
+      - generated-sources.json
+      - type: script
+        commands:
+          - export TMPDIR=$XDG_RUNTIME_DIR/app/$FLATPAK_ID
+          - exec zypak-wrapper /app/bitwarden/bitwarden "$@"
+        dest-filename: start-bitwarden.sh
+      - type: file
+        path: com.bitwarden.desktop.metainfo.xml
